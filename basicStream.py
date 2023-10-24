@@ -7,7 +7,8 @@ import time
 from configuration import configuration as conf
 
 frames = []
-UDP_IP = conf.UDP_IP
+UDP_IP_HOST = conf.UDP_IP_HOST
+UDP_IP_CLIENT_RASPIZERO = '192.168.178.83'
 UDP_PORT = conf.UDP_PORT
 SAMPLING_FREQUENCY = conf.SAMPLING_FREQUENCY
 
@@ -16,7 +17,7 @@ def udpStreamIn():
     while True:
         if len(frames) > 0:
             data = frames.pop(0)
-            udp.sendto(data,  (UDP_IP, UDP_PORT))
+            udp.sendto(data,  (UDP_IP_HOST, UDP_PORT))
             time.sleep(CHUNK / SAMPLING_FREQUENCY)
     udp.close()
 
@@ -27,7 +28,7 @@ def record(stream, CHUNK):
 
 def audio_stream():
     udp = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-
+    udp.bind((UDP_IP_HOST, UDP_PORT))
     CHUNK = 1024
     wf = wave.open("Teeinengland.wav", 'rb')
     
@@ -37,11 +38,16 @@ def audio_stream():
                     rate=wf.getframerate(),
                     input=True,
                     frames_per_buffer=CHUNK)
-
-    for i in range(100):
+    
+    print("Number of samples: ", wf.getnframes() * CHUNK)
+    nbyteswritten = 0
+    for i in range(500):
         data = wf.readframes(CHUNK)
-        udp.sendto(data,  (UDP_IP, UDP_PORT))
+        udp.sendto(data,  (UDP_IP_CLIENT_RASPIZERO, UDP_PORT))
         time.sleep(CHUNK / SAMPLING_FREQUENCY)
+        nbyteswritten = nbyteswritten + len(data)
+    print("Number bytes send: ", nbyteswritten)
+
     udp.close()
 
 if __name__ == '__main__':
