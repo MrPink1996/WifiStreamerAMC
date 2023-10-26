@@ -16,18 +16,19 @@ CHUNK_SIZE = conf.CHUNK_SIZE
 
 
 def play_sound():
-
     p = pyaudio.PyAudio()
     stream = p.open(format = pyaudio.paInt16,
                     channels = 2,
                     rate = SAMPLING_FREQUENCY,
-                    output = True, )
+                    output = True)
 
 
     # Play the sound by writing the audio data to the stream
     timePoint = time.time()
-    while(not q.empty()):
-        stream.write(q.get())
+    while(True):
+        if(not q.empty()):
+            stream.write(q.get())
+        
         if(time.time() - timePoint > 2):
             print("[write] Number of frames in buffer: ", q.qsize())
             timePoint = time.time()
@@ -44,6 +45,7 @@ def get_sound():
 
     while (True):
         data, addr = sock.recvfrom(CHUNK_SIZE) # buffer size is 1024 bytes
+        print(len(data))
         q.put(data)
 
 
@@ -52,12 +54,8 @@ if __name__ == "__main__":
     thread2 = Thread(target= play_sound, args=())
 
     thread1.start()
-    while(q.qsize() < 10):
-        time.sleep(0.2)
-    
-    print("queue is full")
-    
     thread2.start()
     thread2.join()
+
 
     
