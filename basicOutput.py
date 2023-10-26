@@ -13,9 +13,10 @@ UDP_IP_CLIENT = conf.UDP_IP_CLIENT
 UDP_PORT = conf.UDP_PORT
 SAMPLING_FREQUENCY = conf.SAMPLING_FREQUENCY
 CHUNK_SIZE = conf.CHUNK_SIZE
-
+frames = []
 
 def play_sound():
+    global frames
     p = pyaudio.PyAudio()
     stream = p.open(format = pyaudio.paInt16,
                     channels = 2,
@@ -25,7 +26,8 @@ def play_sound():
 
     # Play the sound by writing the audio data to the stream
     while(True):
-        stream.write(q.get(), CHUNK_SIZE)
+        #stream.write(q.get(), CHUNK_SIZE)
+        stream.write(frames.pop(0), CHUNK_SIZE)
 
 
 def get_sound():
@@ -34,7 +36,8 @@ def get_sound():
 
     while (True):
         data, addr = sock.recvfrom(CHUNK_SIZE*2*2) # buffer size is 1024 bytes
-        q.put(data)
+        #q.put(data)
+        frames.append(data)
 
 if __name__ == "__main__":
     thread1 = Thread(target= get_sound, args=())
