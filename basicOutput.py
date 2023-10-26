@@ -24,7 +24,7 @@ def play_sound():
 
 
     # Play the sound by writing the audio data to the stream
-    timePoint = time.time()
+    print("Queue size before playing out: ", q.qsize())
     while(True):
         if(not q.empty()):
             stream.write(q.get())
@@ -50,7 +50,7 @@ if __name__ == "__main__":
     thread2 = Thread(target= play_sound, args=())
 
     thread1.start()
-    time.sleep(2)
+    time.sleep(10)
     thread2.start()
 
     while(True):
