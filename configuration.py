@@ -3,3 +3,4 @@ class configuration:
     UDP_PORT = 5005
     SAMPLING_FREQUENCY = 44100
     UDP_IP_CLIENT = '0.0.0.0'
+    CHUNK_SIZE = 1024

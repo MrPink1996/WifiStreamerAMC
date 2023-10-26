@@ -4,15 +4,18 @@ import pyaudio
 import wave
 from threading import Thread
 import time
+import queue
+
+
+q = queue.Queue()
 
 UDP_IP_CLIENT = conf.UDP_IP_CLIENT
 UDP_PORT = conf.UDP_PORT
 SAMPLING_FREQUENCY = conf.SAMPLING_FREQUENCY
+CHUNK_SIZE = conf.CHUNK_SIZE
 
-frames = []
 
 def play_sound():
-    global frames
 
     p = pyaudio.PyAudio()
     stream = p.open(format = pyaudio.paInt16,
@@ -22,35 +25,39 @@ def play_sound():
 
 
     # Play the sound by writing the audio data to the stream
-    while(len(frames) < 512):
-        time.sleep(0.1)
-    
-    while(len(frames) > 0):
-        stream.write(frames[:512])
-        frames = frames[512:]
+    timePoint = time.time()
+    while(not q.empty()):
+        stream.write(q.get())
+        if(time.time() - timePoint > 2):
+            print("[write] Number of frames in buffer: ", q.qsize())
+            timePoint = time.time()
 
     # Close and terminate the stream
     stream.close()
     p.terminate()
 
 def get_sound():
-    global frames
-    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM) # UDP
-    sock.bind((UDP_IP_CLIENT, UDP_PORT))
-    while True:
-        data, addr = sock.recvfrom(1472) # buffer size is 1024 bytes
-        frames.append(data[:])
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP) # UDP
+    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
+    sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+    sock.bind(("", UDP_PORT))
 
-
-
+    while (True):
+        data, addr = sock.recvfrom(CHUNK_SIZE) # buffer size is 1024 bytes
+        q.put(data)
 
 
 if __name__ == "__main__":
-
     thread1 = Thread(target= get_sound, args=())
-    thread2 = Thread(target=play_sound, args=())
+    thread2 = Thread(target= play_sound, args=())
 
     thread1.start()
+    while(q.qsize() < 10):
+        time.sleep(0.2)
+    
+    print("queue is full")
+    
     thread2.start()
     thread2.join()
-    thread1.join()
+
+    
