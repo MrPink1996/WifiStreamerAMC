@@ -25,9 +25,8 @@ def play_sound():
 
     # Play the sound by writing the audio data to the stream
     print("Queue size before playing out: ", q.qsize())
-    while(True):
-        if(not q.empty()):
-            stream.write(q.get())
+    while(not q.empty()):
+        stream.write(q.get())
 
     # Close and terminate the stream
     stream.close()
@@ -42,21 +41,18 @@ def get_sound():
     while (True):
         data, addr = sock.recvfrom(CHUNK_SIZE) # buffer size is 1024 bytes
         q.put(data)
+        if(q.qsize() > 1000):
+            break
 
 
 if __name__ == "__main__":
     thread1 = Thread(target= get_sound, args=())
-
     thread2 = Thread(target= play_sound, args=())
 
     thread1.start()
-    time.sleep(10)
+    thread1.join()
+
     thread2.start()
-
-    while(True):
-        print("QUEUE SIZE:" , q.qsize())
-        time.sleep(0.5)
     thread2.join()
-
 
     

@@ -31,11 +31,7 @@ def audioInputIntern():
                     input = True, input_device_index=2)
     
     while(True):
-        if(q.qsize() == BUFFER_SIZE):
-            buffer = q.get()
-            q.put(stream.read(int(CHUNK_SIZE/4), exception_on_overflow=False))
-        else:
-            q.put(stream.read(int(CHUNK_SIZE/4), exception_on_overflow=False))
+        q.put(stream.read(int(CHUNK_SIZE/4), exception_on_overflow=False))
     
 def audio_stream():
     udp = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
