@@ -24,9 +24,9 @@ def play_sound():
 
 
     # Play the sound by writing the audio data to the stream
-    print("Queue size before playing out: ", q.qsize())
-    while(not q.empty()):
-        stream.write(q.get())
+    while(True):
+        if(not q.empty()):
+            stream.write(q.get())
 
     # Close and terminate the stream
     stream.close()
@@ -34,16 +34,13 @@ def play_sound():
 
 def get_sound():
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP) # UDP
-    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
-    sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
-    sock.bind(("", UDP_PORT))
+    #sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
+    #sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+    sock.bind(("192.168.178.83", UDP_PORT))
 
     while (True):
         data, addr = sock.recvfrom(CHUNK_SIZE) # buffer size is 1024 bytes
         q.put(data)
-        print(q.qsize())
-        if(q.qsize() == 1000):
-            break
 
 
 if __name__ == "__main__":
@@ -51,12 +48,6 @@ if __name__ == "__main__":
     thread2 = Thread(target= play_sound, args=())
 
     thread1.start()
-    thread1.join()
-
-    print("get sound")
-    print("Queue is ", q.qsize(), " long")
-    time.sleep(2)
-
     thread2.start()
     thread2.join()
 

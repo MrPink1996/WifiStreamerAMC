@@ -38,12 +38,15 @@ def audioRecord(stop = False, stop_buffer=1000):
     
 def audioStream():
     udp = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
-    udp.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
-    udp.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+    #udp.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
+    #udp.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
     #udp.settimeout(0.2)
     
     while(not q.empty()):
-        udp.sendto(q.get(), ('<broadcast>', UDP_PORT))
+        buffer = q.get()
+        udp.sendto(buffer, ('192.168.178.83', UDP_PORT))
+        time.sleep(0.01)
+        print("send on packet with length ", len(buffer))
     udp.close()
 
 def audioPlay():
@@ -69,10 +72,10 @@ if __name__ == '__main__':
 
     recorder.start()
     recorder.join()
-    print("finished recoder thread")
+    print("finished recoder thread with ", q.qsize(), " loaded frames")
     time.sleep(2)
-    player.start()
-    player.join()
+    # player.start()
+    # player.join()
     print("finished player thread")
     streamer.start()
     streamer.join()
