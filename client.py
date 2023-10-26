@@ -29,7 +29,7 @@ if __name__ == "__main__":
                     channels = CHANNELS,
                     rate = RATE,
                     input = True,
-                    frames_per_buffer = CHUNK,
+                    frames_per_buffer = CHUNK, input_device_index=2
                     )
 
 #Initialize Threads
