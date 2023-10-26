@@ -42,9 +42,8 @@ def audioStream():
     udp.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
     #udp.settimeout(0.2)
     
-    while(True):
-        if(not q.empty()):
-            udp.sendto(q.get(), ('<broadcast>', UDP_PORT))
+    while(not q.empty()):
+        udp.sendto(q.get(), ('<broadcast>', UDP_PORT))
     udp.close()
 
 def audioPlay():
@@ -77,3 +76,4 @@ if __name__ == '__main__':
     print("finished player thread")
     streamer.start()
     streamer.join()
+    print("finished streamer")

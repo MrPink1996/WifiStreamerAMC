@@ -41,7 +41,7 @@ def get_sound():
     while (True):
         data, addr = sock.recvfrom(CHUNK_SIZE) # buffer size is 1024 bytes
         q.put(data)
-        if(q.qsize() > 1000):
+        if(q.qsize() == 1000):
             break
 
 
@@ -51,6 +51,7 @@ if __name__ == "__main__":
 
     thread1.start()
     thread1.join()
+
     print("get sound")
     print("Queue is ", q.qsize(), " long")
     time.sleep(2)
