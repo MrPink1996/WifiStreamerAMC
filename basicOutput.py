@@ -51,6 +51,9 @@ if __name__ == "__main__":
 
     thread1.start()
     thread1.join()
+    print("get sound")
+    print("Queue is ", q.qsize(), " long")
+    time.sleep(2)
 
     thread2.start()
     thread2.join()
