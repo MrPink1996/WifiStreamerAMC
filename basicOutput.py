@@ -42,7 +42,6 @@ def get_sound():
         data, addr = sock.recvfrom(CHUNK_SIZE) # buffer size is 1024 bytes
         q.put(data)
 
-
 if __name__ == "__main__":
     thread1 = Thread(target= get_sound, args=())
     thread2 = Thread(target= play_sound, args=())
