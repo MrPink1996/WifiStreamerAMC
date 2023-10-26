@@ -41,6 +41,7 @@ def get_sound():
     while (True):
         data, addr = sock.recvfrom(CHUNK_SIZE) # buffer size is 1024 bytes
         q.put(data)
+        print(q.qsize())
         if(q.qsize() == 1000):
             break
 
