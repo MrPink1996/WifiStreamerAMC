@@ -4,3 +4,4 @@ class configuration:
     SAMPLING_FREQUENCY = 44100
     UDP_IP_CLIENT = '0.0.0.0'
     CHUNK_SIZE = 1024
+    BUFFER_SIZE = 64

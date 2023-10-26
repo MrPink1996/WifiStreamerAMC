@@ -28,10 +28,6 @@ def play_sound():
     while(True):
         if(not q.empty()):
             stream.write(q.get())
-        
-        if(time.time() - timePoint > 2):
-            print("[write] Number of frames in buffer: ", q.qsize())
-            timePoint = time.time()
 
     # Close and terminate the stream
     stream.close()
@@ -45,16 +41,21 @@ def get_sound():
 
     while (True):
         data, addr = sock.recvfrom(CHUNK_SIZE) # buffer size is 1024 bytes
-        print(len(data))
         q.put(data)
 
 
 if __name__ == "__main__":
     thread1 = Thread(target= get_sound, args=())
+
     thread2 = Thread(target= play_sound, args=())
 
     thread1.start()
+    time.sleep(2)
     thread2.start()
+
+    while(True):
+        print("QUEUE SIZE:" , q.qsize())
+        time.sleep(0.5)
     thread2.join()
 
 
