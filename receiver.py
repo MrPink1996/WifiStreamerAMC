@@ -51,6 +51,8 @@ def playData():
         stream = p.open(format=FORMAT, channels=CHANNELS, rate=RATE, output=True, frames_per_buffer=CHUNK_SIZE)
         now = time.time()
         while(True):
+            if( len(data) == 1):
+                continue
             if(data[0].ssrc() + data[0].timestamp() <= int(time.time()*1000.0) + smoother):
                 if(data[0].ssrc() + data[0].timestamp() - int(time.time() * 1000.0) > 0):
                     smoother = smoother - 1
@@ -77,8 +79,10 @@ def controllStream():
     
 thread1 = threading.Thread(target=getData, args=())
 thread2 = threading.Thread(target=playData, args=())
-thread3 = threading.Thread(target=controllStream, args=())
+#thread3 = threading.Thread(target=controllStream, args=())
 
 thread1.start()
 thread2.start()
+
 thread1.join()
+thread2.join()
