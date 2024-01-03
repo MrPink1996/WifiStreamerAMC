@@ -49,7 +49,7 @@ def receive_session():
                 print(f"current {packets} packets | current rate {round(packets*SOCKET_BROADCAST_SIZE*8/((time.time() - now)*1000000), 2)} Mb/s | remaining packet: {len(data)} | total {totalPackets} packets | total rate {round(totalPackets*SOCKET_BROADCAST_SIZE*8/((time.time() - now2)*1000000), 2)} Mb/s")
                 now = time.time()
                 packets = 0
-
+            time.sleep(0.001)
     except Exception as e:
         print(e)
         print('\nClosing socket and stream...')
@@ -64,12 +64,11 @@ def play_session_blocking():
 
         while(True):
             # not enough packets to playout
-            if( len(data) == 10):
+            if( len(data) == 0):
                 continue
 
             time_playout = float(data[0].ssrc()) + (float(data[0].timestamp())/1000000.0) + AUDIO_DELAY
             delay = time.time() - time_playout
-
             # playout is too fast, skip some packets
             if(delay > 0.0001):
                 data = data[1:]
@@ -98,20 +97,17 @@ def play_session_blocking():
         p.terminate()
     
 def ctrl_session():
-    global totalPackets
-    n = totalPackets
     try:
         print("Start controll session")
         now = time.time()
         while(True):
-            if(time.time() - now > 5):
-                # no packets for 5 seconds, send ip address again
-                if(n == totalPackets):
-                    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)  # UDP
-                    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-                    sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
-                    sock.sendto(bytes("I want to play music", "utf-8"), ("255.255.255.255", PORT_CTRL))
-                    sock.close()
+            sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)  # UDP
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+            print("Send: I want to play music")
+            sock.sendto(bytes("I want to play music", "utf-8"), ("255.255.255.255", PORT_CTRL))
+            sock.close()
+            time.sleep(5)
     except KeyboardInterrupt:
         print("Stop controll session")
         sock.close()

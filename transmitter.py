@@ -76,6 +76,7 @@ def transmit_session():
                 data = data[1:]
 
             if (time.time() - now) > 30.0:
+                print(LIST_OF_HOSTS)
                 print(f"current {packets} packets | current rate: {round(packets*SOCKET_BROADCAST_SIZE*8/((time.time() - now)*1000000), 2)} Mb/s | remaining packets: {len(data)} | total packets: {packets2} | total rate: {round(packets2*SOCKET_BROADCAST_SIZE*8/((time.time() - now2)*1000000), 2)} Mb/s ")
                 now = time.time()
                 packets = 0
