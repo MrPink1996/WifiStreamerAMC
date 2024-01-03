@@ -8,13 +8,22 @@ import logging
 
 
 # Configurations for console and file logger
-logger = logging.getLogger("rtp Audio Client")
+# Configurations for console and file logger
+logger = logging.getLogger("RTP Audio Handler")
+logfile_handle = logging.FileHandler(filename="log.txt")
 console_handle = logging.StreamHandler()
+
 logger.setLevel(logging.INFO)
+logfile_handle.setLevel(logging.INFO)
 console_handle.setLevel(logging.INFO)
+
 log_format = logging.Formatter('%(name)s [%(levelname)s] :: %(asctime)s -> %(message)s')
 console_handle.setFormatter(log_format)
+logfile_handle.setFormatter(log_format)
+
+logger.addHandler(logfile_handle)
 logger.addHandler(console_handle)
+
 
 ## RTCP even port
 data = []
