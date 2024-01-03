@@ -3,7 +3,12 @@ import socket
 from RtpPacket import RtpPacket
 import time
 import threading
-import random 
+import random
+import logging
+
+log = logging.getLogger('demo')
+#log.addHandler(JournalHandler())
+log.setLevel(logging.INFO)
 
 ## RTCP even port
 data = []
@@ -32,7 +37,7 @@ def receive_session():
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
     #sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
     sock.bind(("0.0.0.0", int(PORT_TRANSMIT)))
-    print(f'Socket bind succeed "0.0.0.0"')
+    log.info(f'Socket bind succeed "0.0.0.0"')
     rtpPacket = RtpPacket()
     try:
         packets = 0
@@ -46,13 +51,13 @@ def receive_session():
             packets = packets + 1
             if( time.time() - now > 30.0):
                 totalPackets = totalPackets + packets
-                print(f"current {packets} packets | current rate {round(packets*SOCKET_BROADCAST_SIZE*8/((time.time() - now)*1000000), 2)} Mb/s | remaining packet: {len(data)} | total {totalPackets} packets | total rate {round(totalPackets*SOCKET_BROADCAST_SIZE*8/((time.time() - now2)*1000000), 2)} Mb/s")
+                log.info(f"current {packets} packets | current rate {round(packets*SOCKET_BROADCAST_SIZE*8/((time.time() - now)*1000000), 2)} Mb/s | remaining packet: {len(data)} | total {totalPackets} packets | total rate {round(totalPackets*SOCKET_BROADCAST_SIZE*8/((time.time() - now2)*1000000), 2)} Mb/s")
                 now = time.time()
                 packets = 0
             time.sleep(0.001)
     except Exception as e:
-        print(e)
-        print('\nClosing socket and stream...')
+        log.info(e)
+        log.info('\nClosing socket and stream...')
         sock.close()
 
 def play_session_blocking():
@@ -86,30 +91,30 @@ def play_session_blocking():
             # print out informations every 30 seconds
             if(time.time() - now > 30.0):
                 now = time.time()
-                print(f"playout time: {round(time_playout, 2)} | current time: {round(time.time(), 2)} | delay: {round(delay*1000000.0, 2)} us | remaining packets: {len(data)}")
+                log.info(f"playout time: {round(time_playout, 2)} | current time: {round(time.time(), 2)} | delay: {round(delay*1000000.0, 2)} us | remaining packets: {len(data)}")
 
             
     except Exception as e:
-        print(e)
-        print('\nClosing socket and stream...')
+        log.info(e)
+        log.info('\nClosing socket and stream...')
         stream.stop_stream()
         stream.close()
         p.terminate()
     
 def ctrl_session():
     try:
-        print("Start controll session")
+        log.info("Start controll session")
         now = time.time()
         while(True):
             sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)  # UDP
             sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
-            print("Send: I want to play music")
+            log.info("Send: I want to play music")
             sock.sendto(bytes("I want to play music", "utf-8"), ("255.255.255.255", PORT_CTRL))
             sock.close()
             time.sleep(5)
     except KeyboardInterrupt:
-        print("Stop controll session")
+        log.info("Stop controll session")
         sock.close()
 
 thread_receive = threading.Thread(target=receive_session, args=())
