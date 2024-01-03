@@ -8,10 +8,10 @@ class RtpPacket:
 	def __init__(self):
 		pass
 		
-	def encode(self, version, padding, extension, cc, seqnum, marker, pt, ssrc, payload):
+	def encode(self, version, padding, extension, cc, seqnum, marker, pt, ssrc, timestamp, payload):
 		"""Encode the RTP packet with header fields and payload."""
-		timestamp = int(time()*1000.0)
 		self.header = bytearray(HEADER_SIZE)
+		timestamp = int((timestamp - ssrc)*1000000)
 		#--------------
 		# TO COMPLETE
 		#--------------
@@ -37,7 +37,7 @@ class RtpPacket:
 		self.header[1] = marker << 7
 		self.header[1] = self.header[1] | pt
 
-		self.header[2] = seqnum >> 8
+		self.header[2] = (seqnum >> 8) & 255
 		self.header[3] = seqnum & 255
 
 		self.header[4] = (timestamp >> 24) & 0xFF
@@ -57,7 +57,7 @@ class RtpPacket:
 
 	def ssrc(self):
 		ssrc = self.header[8] << 24 | self.header[9] << 16 | self.header[10] << 8 | self.header[11]
-		return int(ssrc) + 1702500000000
+		return int(ssrc)
 		
 	def decode(self, byteStream):
 		"""Decode the RTP packet."""

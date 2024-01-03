@@ -4,80 +4,157 @@ import socket
 import random
 from RtpPacket import RtpPacket
 import threading
+import sys
+
+data = [] # Stream of audio bytes 
 
 
-PORT = "5004"
-LIST_OF_HOSTS = ["192.168.178.83"]#["192.168.178.20", "192.168.178.102"]
 
-data = bytes() # Stream of audio bytes 
-CHUNK_SIZE = 1024
-CHANNELS = 2
-BROADCAST_SIZE = CHUNK_SIZE*CHANNELS*2
-FORMAT = pyaudio.paInt16 # 2 bytes size
-RATE = 44100
+# AUDIO VARIABLES
+AUDIO_CHUNK_SIZE = 4096 # SAMPLES
+AUDIO_CHANNELS = 2
+AUDIO_FORMAT = pyaudio.paInt16 # 2 bytes size
+AUDIO_BYTE_SIZE = 2
+AUDIO_DELAY = 5
+AUDIO_RATE = 44100
+AUDIO_MAX_BUFFER_SIZE = AUDIO_RATE * AUDIO_CHANNELS * AUDIO_BYTE_SIZE #BYTES
 
-# instantiate PyAudio (1)
-p = pyaudio.PyAudio()
+# SOCKET VARIABLES
+PORT_CTRL = 5004
+PORT_TRANSMIT = 5005
+PORT_AUTH = 5006
+LIST_OF_HOSTS = []#["192.168.178.172", "192.168.178.102"]
+SOCKET_CHUNK_SIZE = 4096 # SAMPLES
+SOCKET_BROADCAST_SIZE = SOCKET_CHUNK_SIZE*AUDIO_CHANNELS*AUDIO_BYTE_SIZE # BYTES
 
-# define callback (2)
+# RTP VARIABLES
+RTP_VERSION = 2
+RTP_PADDING = 0
+RTP_EXTENSION = 0
+RTP_CC = 0
+RTP_MARKER = 0
+RTP_PT = 10
+seqnum = random.randint(1, 9999)
+ssrc = int(time.time())
+
+# SESSION MARKERS
+AUDIO_SESSION = False
+UDP_SESSION = False
+
+
+def ctrl_session():
+    global LIST_OF_HOSTS, startTime
+    
+    try:
+        now = time.time()
+        print("start controll session")
+        while True:
+            if(time.time() - now > 5):
+                now = time.time()
+                print("list of hosts:", LIST_OF_HOSTS)
+                for host in LIST_OF_HOSTS:
+                    try:
+                        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                        sock.connect((host, PORT_CTRL))
+                        sock.sendto(str(startTime).encode(), (host, PORT_CTRL))
+                    finally:
+                        sock.close()
+    except KeyboardInterrupt:
+        print("Closing socket")
+        sock.close()
+
+def auth_session():
+    global LIST_OF_HOSTS
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        print("Start authentication session")
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+        sock.bind(("0.0.0.0", PORT_AUTH))
+        while True:
+            data, addr = sock.recvfrom(1024)
+            print(data, addr)
+            if(addr[0] not in LIST_OF_HOSTS):
+                LIST_OF_HOSTS.append(addr[0])
+
+    except KeyboardInterrupt:
+        sock.close()
+
+def transmit_session():
+    global seqnum, data, UDP_SESSION, AUDIO_SESSION
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
+    #sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    #sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+    try:
+        print("Starting UDP socket")
+        UDP_SESSION = True
+        now = time.time()
+        now2 = time.time()
+        packets = 0
+        packets2 = 0
+        while True:
+            if (len(data) >= 1):
+                #sock.sendto(data[0].getPacket(), ("255.255.255.255", int(PORT_TRANSMIT)))
+                sock.sendto(data[0].getPacket(), ("192.168.178.172", int(PORT_TRANSMIT)))
+                #for host in LIST_OF_HOSTS:
+                #    sock.sendto(rtpPacket.getPacket(), (host, int(PORT_TRANSMIT)))
+                packets = packets + 1
+                packets2 = packets2 + 1
+                data = data[1:]
+
+
+            if (time.time() - now) > 5.0:
+                print(f"current {packets} packets | current rate: {round(packets*SOCKET_BROADCAST_SIZE*8/((time.time() - now)*1000000), 2)} Mb/s | remaining packets: {len(data)} | total packets: {packets2} | total rate: {round(packets2*SOCKET_BROADCAST_SIZE*8/((time.time() - now2)*1000000), 2)} Mb/s ")
+                now = time.time()
+                packets = 0
+
+            #if( packets2 >= 3000):
+            #    print(f"current {packets} packets | current rate: {round(packets*SOCKET_BROADCAST_SIZE*8/((time.time() - now)*1000000), 2)} Mb/s | remaining packets: {len(data)} | total packets: {packets2} | total rate: {round(packets2*SOCKET_BROADCAST_SIZE*8/((time.time() - now2)*1000000), 2)} Mb/s ")
+            #    sock.close()
+            #    break
+
+            if(AUDIO_SESSION == False and len(data) == 0):
+                print('\nClosing UDP socket...')
+                sock.close()
+                break
+    except KeyboardInterrupt:
+        print('\nClosing UDP socket...')
+        sock.close()
+
+def record_session():
+    global AUDIO_SESSION
+    p = pyaudio.PyAudio()
+    stream = p.open(format=AUDIO_FORMAT, channels=AUDIO_CHANNELS, rate=AUDIO_RATE, input=True, frames_per_buffer=AUDIO_CHUNK_SIZE, stream_callback=pyaudio_callback)
+    stream.start_stream()
+    try:
+        AUDIO_SESSION = True
+        print("Start recording audio")
+        while True:
+            pass
+    except KeyboardInterrupt:
+        print('\nStop recording audio')
+        stream.stop_stream()
+        stream.close()
+        p.terminate()
+        AUDIO_SESSION = False
+
 def pyaudio_callback(in_data, frame_count, time_info, status):
-    global data
-    data += in_data
+    global data, seqnum, ssrc
+    seqnum = seqnum + 1
+    rtpPacket = RtpPacket()
+    rtpPacket.encode(RTP_VERSION, RTP_PADDING, RTP_EXTENSION, RTP_CC, seqnum, RTP_MARKER, RTP_PT, ssrc, time_info['input_buffer_adc_time'], in_data)
+    data.append(rtpPacket)
     return (None, pyaudio.paContinue)
 
-def session_start():
-    #data_start = bytearray(224)
-    testTxt = "\x20\x00\xc4\x18\xc0\xa8\xb2\x3e\x61\x70\x70\x6c\x69\x63\x61\x74" \
-            "\x69\x6f\x6e\x2f\x73\x64\x70\x00\x76\x3d\x30\x0a\x6f\x3d\x6d\x72" \
-            "\x70\x69\x6e\x6b\x20\x33\x39\x31\x31\x34\x38\x35\x31\x32\x37\x20" \
-            "\x30\x20\x49\x4e\x20\x49\x50\x34\x20\x31\x39\x32\x2e\x31\x36\x38" \
-            "\x2e\x31\x37\x38\x2e\x36\x32\x0a\x73\x3d\x50\x75\x6c\x73\x65\x41" \
-            "\x75\x64\x69\x6f\x20\x52\x54\x50\x20\x53\x74\x72\x65\x61\x6d\x20" \
-            "\x6f\x6e\x20\x6d\x72\x70\x69\x6e\x6b\x2d\x75\x62\x75\x6e\x74\x75" \
-            "\x0a\x63\x3d\x49\x4e\x20\x49\x50\x34\x20\x32\x32\x34\x2e\x30\x2e" \
-            "\x30\x2e\x35\x36\x0a\x74\x3d\x33\x39\x31\x31\x34\x38\x35\x31\x32" \
-            "\x37\x20\x30\x0a\x61\x3d\x72\x65\x63\x76\x6f\x6e\x6c\x79\x0a\x6d" \
-            "\x3d\x61\x75\x64\x69\x6f\x20\x35\x30\x30\x34\x20\x52\x54\x50\x2f" \
-            "\x41\x56\x50\x20\x31\x30\x0a\x61\x3d\x72\x74\x70\x6d\x61\x70\x3a" \
-            "\x31\x30\x20\x4c\x31\x36\x2f\x34\x34\x31\x30\x30\x2f\x32\x0a\x61" \
-            "\x3d\x74\x79\x70\x65\x3a\x62\x72\x6f\x61\x64\x63\x61\x73\x74\x0a"
-    data_start = bytearray(testTxt, encoding='utf-8')
-    #print(testTxt, data_start)    
-    #sock.sendto(data_start, (HOST, int(9875)))
 
-# open stream (3)
-stream = p.open(format=FORMAT, channels=CHANNELS, rate=RATE, input=True, frames_per_buffer=CHUNK_SIZE, stream_callback=pyaudio_callback)
+if __name__ == "__main__":
+    thread_authenticate = threading.Thread(target=auth_session, args=())
+    thread_ctrl = threading.Thread(target=ctrl_session, args=())
+    thread_transmit = threading.Thread(target=transmit_session, args=())
+    thread_record = threading.Thread(target=record_session, args=())
 
-# start the stream (4)
-stream.start_stream()
+    thread_record.start()
 
-seqnum = random.randint(1, 9999)
-ssrc = int(time.time() * 1000.0) - 1702500000000
-
-#1702500000000
-sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
-try:
-    #session_start()
-    while True:
-        if (len(data) > BROADCAST_SIZE):
-            version = 2
-            padding = 0
-            extension = 0
-            cc = 0
-            marker = 0
-            pt = 10 # 16bint
-            seqnum = seqnum + 1
-            
-            rtpPacket = RtpPacket()
-            rtpPacket.encode(version, padding, extension, cc, seqnum, marker, pt, ssrc, data[:BROADCAST_SIZE])
-            data = data[BROADCAST_SIZE:]
-            for host in LIST_OF_HOSTS:
-                sock.sendto(rtpPacket.getPacket(), (host, int(PORT)))
-            #sock.sendto(rtpPacket.getPacket(), ("192.168.178.20", int(PORT)))
-
-except KeyboardInterrupt:
-    print('\nClosing stream...')
-    stream.stop_stream()
-    stream.close()
-    p.terminate()
-    #sock.close()
+    while(not AUDIO_SESSION):
+        pass
+    thread_transmit.start()
+    thread_transmit.join()
