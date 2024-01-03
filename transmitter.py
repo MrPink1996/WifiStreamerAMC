@@ -22,7 +22,6 @@ AUDIO_MAX_BUFFER_SIZE = AUDIO_RATE * AUDIO_CHANNELS * AUDIO_BYTE_SIZE #BYTES
 # SOCKET VARIABLES
 PORT_CTRL = 5004
 PORT_TRANSMIT = 5005
-PORT_AUTH = 5006
 LIST_OF_HOSTS = []#["192.168.178.172", "192.168.178.102"]
 SOCKET_CHUNK_SIZE = 4096 # SAMPLES
 SOCKET_BROADCAST_SIZE = SOCKET_CHUNK_SIZE*AUDIO_CHANNELS*AUDIO_BYTE_SIZE # BYTES
@@ -43,33 +42,12 @@ UDP_SESSION = False
 
 
 def ctrl_session():
-    global LIST_OF_HOSTS, startTime
-    
-    try:
-        now = time.time()
-        print("start controll session")
-        while True:
-            if(time.time() - now > 5):
-                now = time.time()
-                print("list of hosts:", LIST_OF_HOSTS)
-                for host in LIST_OF_HOSTS:
-                    try:
-                        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                        sock.connect((host, PORT_CTRL))
-                        sock.sendto(str(startTime).encode(), (host, PORT_CTRL))
-                    finally:
-                        sock.close()
-    except KeyboardInterrupt:
-        print("Closing socket")
-        sock.close()
-
-def auth_session():
     global LIST_OF_HOSTS
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     try:
         print("Start authentication session")
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
-        sock.bind(("0.0.0.0", PORT_AUTH))
+        sock.bind(("0.0.0.0", PORT_CTRL))
         while True:
             data, addr = sock.recvfrom(1024)
             print(data, addr)
@@ -80,10 +58,8 @@ def auth_session():
         sock.close()
 
 def transmit_session():
-    global seqnum, data, UDP_SESSION, AUDIO_SESSION
+    global seqnum, data, UDP_SESSION, AUDIO_SESSION, LIST_OF_HOSTS
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
-    #sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    #sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
     try:
         print("Starting UDP socket")
         UDP_SESSION = True
@@ -93,29 +69,22 @@ def transmit_session():
         packets2 = 0
         while True:
             if (len(data) >= 1):
-                #sock.sendto(data[0].getPacket(), ("255.255.255.255", int(PORT_TRANSMIT)))
-                sock.sendto(data[0].getPacket(), ("192.168.178.172", int(PORT_TRANSMIT)))
-                #for host in LIST_OF_HOSTS:
-                #    sock.sendto(rtpPacket.getPacket(), (host, int(PORT_TRANSMIT)))
+                for host in LIST_OF_HOSTS:
+                    sock.sendto(data[0].getPacket(), (host, int(PORT_TRANSMIT)))
                 packets = packets + 1
                 packets2 = packets2 + 1
                 data = data[1:]
 
-
-            if (time.time() - now) > 5.0:
+            if (time.time() - now) > 30.0:
                 print(f"current {packets} packets | current rate: {round(packets*SOCKET_BROADCAST_SIZE*8/((time.time() - now)*1000000), 2)} Mb/s | remaining packets: {len(data)} | total packets: {packets2} | total rate: {round(packets2*SOCKET_BROADCAST_SIZE*8/((time.time() - now2)*1000000), 2)} Mb/s ")
                 now = time.time()
                 packets = 0
-
-            #if( packets2 >= 3000):
-            #    print(f"current {packets} packets | current rate: {round(packets*SOCKET_BROADCAST_SIZE*8/((time.time() - now)*1000000), 2)} Mb/s | remaining packets: {len(data)} | total packets: {packets2} | total rate: {round(packets2*SOCKET_BROADCAST_SIZE*8/((time.time() - now2)*1000000), 2)} Mb/s ")
-            #    sock.close()
-            #    break
 
             if(AUDIO_SESSION == False and len(data) == 0):
                 print('\nClosing UDP socket...')
                 sock.close()
                 break
+
     except KeyboardInterrupt:
         print('\nClosing UDP socket...')
         sock.close()
@@ -147,14 +116,15 @@ def pyaudio_callback(in_data, frame_count, time_info, status):
 
 
 if __name__ == "__main__":
-    thread_authenticate = threading.Thread(target=auth_session, args=())
     thread_ctrl = threading.Thread(target=ctrl_session, args=())
     thread_transmit = threading.Thread(target=transmit_session, args=())
     thread_record = threading.Thread(target=record_session, args=())
 
+    thread_ctrl.start()
     thread_record.start()
 
     while(not AUDIO_SESSION):
         pass
+    
     thread_transmit.start()
     thread_transmit.join()
