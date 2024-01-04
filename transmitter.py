@@ -8,8 +8,6 @@ import sys
 
 data = [] # Stream of audio bytes 
 
-
-
 # AUDIO VARIABLES
 AUDIO_CHUNK_SIZE = 4096 # SAMPLES
 AUDIO_CHANNELS = 2
