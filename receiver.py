@@ -9,7 +9,7 @@ import logging
 # Configurations for console and file logger
 # Configurations for console and file logger
 logger = logging.getLogger("RTP Audio Client")
-logfile_handle = logging.FileHandler(filename="log.txt")
+logfile_handle = logging.FileHandler(filename="log_receiver.txt")
 console_handle = logging.StreamHandler()
 
 logger.setLevel(logging.INFO)

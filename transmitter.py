@@ -11,7 +11,7 @@ import logging
 # Configurations for console and file logger
 # Configurations for console and file logger
 logger = logging.getLogger("RTP Audio Master")
-logfile_handle = logging.FileHandler(filename="log.txt")
+logfile_handle = logging.FileHandler(filename="log_transmitter.txt")
 console_handle = logging.StreamHandler()
 
 logger.setLevel(logging.INFO)
