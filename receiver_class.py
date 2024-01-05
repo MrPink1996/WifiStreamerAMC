@@ -1,4 +1,3 @@
-
 import pyaudio
 import socket
 from RtpPacket import RtpPacket
@@ -6,7 +5,6 @@ import time
 import threading
 import random
 import logging
-
 
 # Configurations for console and file logger
 # Configurations for console and file logger
@@ -201,7 +199,7 @@ class playAudio(threading.Thread):
         self.stream = None
         self.pa = None
         self.delay = 0
-        self.smoother = 0
+        self.init = False
 
     def run(self):
         try:
@@ -215,20 +213,14 @@ class playAudio(threading.Thread):
 
                 if len(data) == 0:
                     continue
-                
+
                 time_playout = float(data[0].ssrc()) + (float(data[0].timestamp())/1000000.0) + AUDIO_DELAY
                 delay = time.time() - time_playout
-                if delay > 0.0001:
-                    del data[0]
-                    continue
-
-                if delay < - 0.00001:
-                    print("sleep")
-                    time.sleep(0.000001)
-                    continue
-                self.delay = delay
-                # playout packet
-                self.stream.write(data[0].getPayload())
+                while(delay < 0):
+                    delay = time.time() - time_playout
+                self.delay = time.time() - time_playout
+                self.stream.write(data[0].getPayload(), exception_on_underflow=False)
+                self.init = True
                 del data[0]
 
             logger.info("[PLAY]\t\tStop Thread")
@@ -316,7 +308,8 @@ if __name__ == "__main__":
     thread_play = playAudio()
     thread_play.start()
     LOGIN_STATE = False
-
+    delay = []
+    avg = 0
     try:
         while True:
             if LOGIN_STATE is False:
@@ -331,12 +324,21 @@ if __name__ == "__main__":
                 continue
 
             LOGIN_STATE = thread_receive.incomingData
-            if(thread_receive.packets > 0 ):
-                logger.info(f"Packets received: {thread_receive.packets} | Packet rate: {thread_receive.packetRate} Mb/s | Total packets received {thread_receive.packetsTotal} | Total packet rate {thread_receive.packetRateTotal} Mb/s | Current audio Delay: {thread_play.delay*1000000.0} us")
             time.sleep(2)
+            if thread_play.init is True:
+                logger.info(f"Packets received: {thread_receive.packets} | Packet rate: {thread_receive.packetRate} Mb/s | Total packets received {thread_receive.packetsTotal} | Total packet rate {thread_receive.packetRateTotal} Mb/s | Current audio Delay: {thread_play.delay*1000000.0} us")
+                delay.append(thread_play.delay)
+                if len(delay) > 100:
+                    del delay[0]
+                mean = sum(delay) / len(delay)
+                res = sum((i - mean) ** 2 for i in delay) / len(delay) 
+                logger.info(f"avg: {round(mean*1000000.0, 2)} us | {round(res*1000000000000.0, 2)} ps | {round(min(delay)*1000000.0, 2)} us | {round(max(delay)*1000000.0, 2)} us")
+
         
     except KeyboardInterrupt:
         thread_login.stop_thread = True
         thread_play.stop_thread = True
         thread_receive.stop_thread = True
+
+    print(delay)
         
