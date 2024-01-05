@@ -28,7 +28,7 @@ logger.addHandler(console_handle)
 data = []
 
 # AUDIO VARIABLES
-AUDIO_CHUNK_SIZE = 4096 # SAMPLES
+AUDIO_CHUNK_SIZE = 2048 # SAMPLES
 AUDIO_CHANNELS = 2
 AUDIO_FORMAT = pyaudio.paInt16 # 2 bytes size
 AUDIO_BYTE_SIZE = 2
@@ -42,7 +42,7 @@ RTP_HEADER_SIZE = 12
 PORT_CTRL = 5004
 PORT_TRANSMIT = 5005
 PORT_SDP = 5006
-SOCKET_CHUNK_SIZE = 4096 # SAMPLES
+SOCKET_CHUNK_SIZE = 2048 # SAMPLES
 SOCKET_BROADCAST_SIZE = SOCKET_CHUNK_SIZE*AUDIO_CHANNELS*AUDIO_BYTE_SIZE + RTP_HEADER_SIZE# BYTES
 
 class loginHandler(threading.Thread):
@@ -200,6 +200,7 @@ class playAudio(threading.Thread):
         self.pa = None
         self.delay = 0
         self.init = False
+        self.playFaster = 0
 
     def run(self):
         try:
@@ -218,11 +219,17 @@ class playAudio(threading.Thread):
                 delay = time.time() - time_playout
                 while(delay < 0):
                     delay = time.time() - time_playout
+
                 self.delay = time.time() - time_playout
+
                 self.stream.write(data[0].getPayload(), exception_on_underflow=False)
-                self.init = True
                 del data[0]
 
+                if(self.delay > 0 and len(data) > 0):
+                    self.stream.write(data[0].getPayload(), exception_on_underflow=False)
+                    del data[0]
+
+                self.init = True
             logger.info("[PLAY]\t\tStop Thread")
             logger.info("[PLAY]\t\tStop audio stream")
             self.stream.close()
@@ -282,6 +289,7 @@ class receiveAudio(threading.Thread):
                     rtpPacket = RtpPacket()
                     rtpPacket.decode(new_data)
                     data.append(rtpPacket)
+                    #print(time.time(), rtpPacket.timestamp(), rtpPacket.ssrc(), rtpPacket.timestamp()/1000000.0, rtpPacket.ssrc() + rtpPacket.timestamp()/1000000.0)
                     self.packets = self.packets + 1
 
                 except socket.timeout:
@@ -333,6 +341,7 @@ if __name__ == "__main__":
                 mean = sum(delay) / len(delay)
                 res = sum((i - mean) ** 2 for i in delay) / len(delay) 
                 logger.info(f"avg: {round(mean*1000000.0, 2)} us | {round(res*1000000000000.0, 2)} ps | {round(min(delay)*1000000.0, 2)} us | {round(max(delay)*1000000.0, 2)} us")
+                #print(thread_play.playFaster*1000000.0)
 
         
     except KeyboardInterrupt:

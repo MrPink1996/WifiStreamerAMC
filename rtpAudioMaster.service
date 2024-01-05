@@ -1,0 +1,10 @@
+[Service]
+Type=simple
+ExecStartPre=/bin/sleep 10
+ExecStart=/home/mrpink/WifiStreamerAMC/env/bin/python3 /home/mrpink/WifiStreamerAMC/transmitter.py
+WorkingDirectory=/home/mrpink/WifiStreamerAMC/
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

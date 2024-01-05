@@ -28,7 +28,7 @@ logger.addHandler(console_handle)
 data = [] # Stream of audio bytes 
 
 # AUDIO VARIABLES
-AUDIO_CHUNK_SIZE = 4096 # SAMPLES
+AUDIO_CHUNK_SIZE = 2048 # SAMPLES
 AUDIO_CHANNELS = 2
 AUDIO_FORMAT = pyaudio.paInt16 # 2 bytes size
 AUDIO_BYTE_SIZE = 2
@@ -41,7 +41,7 @@ PORT_CTRL = 5004
 PORT_TRANSMIT = 5005
 PORT_SDP = 5006
 LIST_OF_HOSTS = []#["192.168.178.172", "192.168.178.102"]
-SOCKET_CHUNK_SIZE = 4096 # SAMPLES
+SOCKET_CHUNK_SIZE = 2048 # SAMPLES
 SOCKET_BROADCAST_SIZE = SOCKET_CHUNK_SIZE*AUDIO_CHANNELS*AUDIO_BYTE_SIZE # BYTES
 
 # RTP VARIABLES
@@ -165,10 +165,12 @@ class transmitAudio(threading.Thread):
                     continue
 
                 out_data = data[0].getPacket()
+                #print(out_data[100:110])
+                #print(time.time(), data[0].timestamp(), data[0].ssrc(), data[0].timestamp()/1000000.0, data[0].ssrc() + data[0].timestamp()/1000000.0)
                 del data[0]
+                #print(out_data)
                 for host in LIST_OF_HOSTS:
                     self.sock.sendto(out_data, (host, int(PORT_TRANSMIT)))
-
                 self.packets = self.packets + 1
                 if time.time() - self.timer > 5.0:
                     self.packetsTotal = self.packetsTotal + self.packets
@@ -202,14 +204,21 @@ class recordAudio(threading.Thread):
     def callback(self, in_data, frame_count, time_info, status):
         self.seqnum = self.seqnum + 1
         rtpPacket = RtpPacket()
-        rtpPacket.encode(RTP_VERSION, RTP_PADDING, RTP_EXTENSION, RTP_CC, self.seqnum, RTP_MARKER, RTP_PT, self.ssrc, time_info['input_buffer_adc_time'], in_data)
+        #rtpPacket.encode(RTP_VERSION, RTP_PADDING, RTP_EXTENSION, RTP_CC, self.seqnum, RTP_MARKER, RTP_PT, self.ssrc, time_info['input_buffer_adc_time'], in_data)
+        rtpPacket.encode(RTP_VERSION, RTP_PADDING, RTP_EXTENSION, RTP_CC, self.seqnum, RTP_MARKER, RTP_PT, self.ssrc, time.time(), in_data)
+        #print(time_info, time.time())
         data.append(rtpPacket)
         if(len(data) >= 10):
             del data[0]
         return (None, pyaudio.paContinue)
 
     def start_stream(self):
-        self.stream = self.p.open(format=AUDIO_FORMAT, channels=AUDIO_CHANNELS, rate=AUDIO_RATE, input=True, frames_per_buffer=AUDIO_CHUNK_SIZE, stream_callback=self.callback)
+        info = self.p.get_host_api_info_by_index(0)
+        numdevices = info.get('deviceCount')
+        for i in range(0, numdevices):
+            if (self.p.get_device_info_by_host_api_device_index(0, i).get('maxInputChannels')) > 0:
+                print("Input Device id ", i, " - ", self.p.get_device_info_by_host_api_device_index(0, i).get('name'))
+        self.stream = self.p.open(format=AUDIO_FORMAT, channels=AUDIO_CHANNELS, rate=AUDIO_RATE, input=True, frames_per_buffer=AUDIO_CHUNK_SIZE, stream_callback=self.callback, input_device_index=1)
         self.stream.start_stream()
         logger.info("[RECORD]\t\tStart audio stream")
 
