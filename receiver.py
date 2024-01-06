@@ -28,7 +28,7 @@ logger.addHandler(console_handle)
 data = []
 
 # AUDIO VARIABLES
-AUDIO_CHUNK_SIZE = 2048 # SAMPLES
+AUDIO_CHUNK_SIZE = 1024 # SAMPLES
 AUDIO_CHANNELS = 2
 AUDIO_FORMAT = pyaudio.paInt16 # 2 bytes size
 AUDIO_BYTE_SIZE = 2
@@ -42,7 +42,7 @@ RTP_HEADER_SIZE = 12
 PORT_CTRL = 5004
 PORT_TRANSMIT = 5005
 PORT_SDP = 5006
-SOCKET_CHUNK_SIZE = 2048 # SAMPLES
+SOCKET_CHUNK_SIZE = 1024 # SAMPLES
 SOCKET_BROADCAST_SIZE = SOCKET_CHUNK_SIZE*AUDIO_CHANNELS*AUDIO_BYTE_SIZE + RTP_HEADER_SIZE# BYTES
 
 class loginHandler(threading.Thread):
@@ -198,9 +198,16 @@ class playAudio(threading.Thread):
         self.stop_thread = False
         self.stream = None
         self.pa = None
-        self.delay = 0
         self.init = False
-        self.playFaster = 0
+        self.delayArray = []
+        self.lastBuffer = time.time()
+
+    def playBuffer(self):
+        #print(round((time.time() - self.lastBuffer)*1000000.0, 2))
+        self.stream.write(data[0].getPayload())
+        del data[0]
+        #time.sleep(0.001)
+        #self.lastBuffer = time.time()
 
     def run(self):
         try:
@@ -218,16 +225,22 @@ class playAudio(threading.Thread):
                 time_playout = float(data[0].ssrc()) + (float(data[0].timestamp())/1000000.0) + AUDIO_DELAY
                 delay = time.time() - time_playout
                 while(delay < 0):
+                    #time.sleep(0.0001)
+                    # if(time.time() - self.timeDiff > 0.07 and self.init is True):
+                    #     break
                     delay = time.time() - time_playout
 
-                self.delay = time.time() - time_playout
+                self.delayArray.append(time.time() - time_playout)
+                if len(self.delayArray) > 100:
+                    del self.delayArray[0]
 
-                self.stream.write(data[0].getPayload(), exception_on_underflow=False)
-                del data[0]
+                self.playBuffer()
 
-                if(self.delay > 0 and len(data) > 0):
-                    self.stream.write(data[0].getPayload(), exception_on_underflow=False)
-                    del data[0]
+                if len(data) > 0:
+                    self.playBuffer()
+
+                if(self.delayArray[0] > 0 and len(data) > 0):
+                    self.playBuffer()
 
                 self.init = True
             logger.info("[PLAY]\t\tStop Thread")
@@ -334,20 +347,16 @@ if __name__ == "__main__":
             LOGIN_STATE = thread_receive.incomingData
             time.sleep(2)
             if thread_play.init is True:
-                logger.info(f"Packets received: {thread_receive.packets} | Packet rate: {thread_receive.packetRate} Mb/s | Total packets received {thread_receive.packetsTotal} | Total packet rate {thread_receive.packetRateTotal} Mb/s | Current audio Delay: {thread_play.delay*1000000.0} us")
-                delay.append(thread_play.delay)
-                if len(delay) > 100:
-                    del delay[0]
-                mean = sum(delay) / len(delay)
-                res = sum((i - mean) ** 2 for i in delay) / len(delay) 
-                logger.info(f"avg: {round(mean*1000000.0, 2)} us | {round(res*1000000000000.0, 2)} ps | {round(min(delay)*1000000.0, 2)} us | {round(max(delay)*1000000.0, 2)} us")
-                #print(thread_play.playFaster*1000000.0)
-
+            
+                mean = sum(thread_play.delayArray) / len(thread_play.delayArray)
+                res = sum((i - mean) ** 2 for i in thread_play.delayArray) / len(thread_play.delayArray) 
+                logger.info(f"Packets received: {thread_receive.packets} | Packet rate: {thread_receive.packetRate} Mb/s | Total packets received {thread_receive.packetsTotal} | Total packet rate {thread_receive.packetRateTotal} Mb/s")
+                logger.info(f"current delay: {round(thread_play.delayArray[-1]*1000000.0, 2)} us | avg: {round(mean*1000000.0, 2)} us | var: {round(res*1000000000000.0, 2)} ps | min: {round(min(thread_play.delayArray)*1000000.0, 2)} us | max: {round(max(thread_play.delayArray)*1000000.0, 2)} us")
+                #print(thread_play.stream.get_time(), thread_play.stream.get_cpu_load(), thread_play.stream.get_write_available())
         
     except KeyboardInterrupt:
         thread_login.stop_thread = True
         thread_play.stop_thread = True
         thread_receive.stop_thread = True
 
-    print(delay)
         
