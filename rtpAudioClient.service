@@ -1,6 +1,6 @@
 [Service]
 Type=simple
-ExecStartPre=/bin/sleep 10
+ExecStartPre=/bin/sleep 5
 ExecStart=/home/mrpink/WifiStreamerAMC/env/bin/python3 /home/mrpink/WifiStreamerAMC/receiver.py
 WorkingDirectory=/home/mrpink/WifiStreamerAMC/
 Restart=always

@@ -200,12 +200,17 @@ class recordAudio(threading.Thread):
         self.ssrc = int(time.time())
         self.stop_thread = False
         data.clear()
+        self.startTime = 0
     
     def callback(self, in_data, frame_count, time_info, status):
         self.seqnum = self.seqnum + 1
+        if self.startTime == 0:
+            self.startTime = time.time() - time_info['input_buffer_adc_time']
         rtpPacket = RtpPacket()
-        #rtpPacket.encode(RTP_VERSION, RTP_PADDING, RTP_EXTENSION, RTP_CC, self.seqnum, RTP_MARKER, RTP_PT, self.ssrc, time_info['input_buffer_adc_time'], in_data)
-        rtpPacket.encode(RTP_VERSION, RTP_PADDING, RTP_EXTENSION, RTP_CC, self.seqnum, RTP_MARKER, RTP_PT, self.ssrc, time.time(), in_data)
+        rtpPacket.encode(RTP_VERSION, RTP_PADDING, RTP_EXTENSION, RTP_CC, self.seqnum, RTP_MARKER, RTP_PT, self.ssrc, time_info['input_buffer_adc_time'] + self.startTime, in_data)
+        #print(rtpPacket.getPayload()[100:110])
+        #print(time_info)
+        #rtpPacket.encode(RTP_VERSION, RTP_PADDING, RTP_EXTENSION, RTP_CC, self.seqnum, RTP_MARKER, RTP_PT, self.ssrc, time.time(), in_data)
         #print(time_info, time.time())
         data.append(rtpPacket)
         if(len(data) >= 10):
