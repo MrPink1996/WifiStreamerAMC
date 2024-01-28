@@ -37,8 +37,6 @@ AUDIO_BYTE_SIZE = 2
 AUDIO_RATE = 44100
 AUDIO_DELAY = (AUDIO_CHUNK_SIZE/AUDIO_RATE) * 128
 
-# RTP VARIABLES
-RTP_HEADER_SIZE = 12
 
 # SOCKET VARIABLES
 SERVER_IP = ""
@@ -47,23 +45,16 @@ PORT_CTRL = 5004
 PORT_TRANSMIT = 5005
 PORT_SDP = 5006
 SOCKET_CHUNK_SIZE = 1024 # SAMPLES
-SOCKET_BROADCAST_SIZE = SOCKET_CHUNK_SIZE*AUDIO_CHANNELS*AUDIO_BYTE_SIZE + RTP_HEADER_SIZE# BYTES
+SOCKET_BROADCAST_SIZE = SOCKET_CHUNK_SIZE*AUDIO_CHANNELS*AUDIO_BYTE_SIZE + 6# BYTES
            
 class playAudio(threading.Thread):
-    def __init__(self, delayBuffer=10):
+    def __init__(self):
         threading.Thread.__init__(self)
         logger.debug("[PLAY]\t\tStart Thread")
         self.stop_thread = False
         self.stream = None
         self.pa = pyaudio.PyAudio()
-        self.delayBuffer = delayBuffer
         self.init = False
-        self.delayArray = []
-
-    def playBuffer(self):
-        global data
-        self.stream.write(data[0].getPayload())
-        del data[0]
 
     def run(self):
         global timeStart, data
@@ -77,20 +68,16 @@ class playAudio(threading.Thread):
 
                 if len(data) == 0:
                     continue
-
-                time_playout = (float(data[0].timestamp())/1000000.0) + AUDIO_DELAY
+                
+                timestamp = (data[0][2] << 24) + (data[0][3] << 16) + (data[0][4] << 8) + (data[0][5])
+                del data[0]
+                time_playout = (float(timestamp)/1000000.0) + AUDIO_DELAY
+                print(time_playout)
                 delay = (time.time() - timeStart) - time_playout
                 while(delay < 0.0):
-                    delay = (time.time() - timeStart) - time_playout
-                self.delayArray.append((time.time() - timeStart) - time_playout)
-                if len(self.delayArray) > self.delayBuffer:
-                    del self.delayArray[0]
-                self.playBuffer()
-
-                if len(data) > 0:
-                    self.playBuffer()
-
-                self.init = True
+                    delay = (time.time() - timeStart) - time_playout                
+                self.stream.write(data[0].getPayload())
+                del data[0]
             logger.debug("[PLAY]\t\tStop Thread")
             logger.debug("[PLAY]\t\tStop audio stream")
             self.stream.close()
@@ -108,21 +95,7 @@ class receiveAudio(threading.Thread):
         logger.debug("[RECEIVE]\t\tStart Thread")
         self.stop_thread = False
         self.sockUDP = None
-        self.timerTotal = 0
-        self.timer = 0
-        self.packetRate = 0
-        self.packetRateTotal = 0
-        self.packetsReceived = 0
-        self.packetsReceivedTotal = 0
         self.seqNum = None
-        self.lostPackets = 0
-        self.lostPacketsTotal = 0
-        self.packetLoss = 0
-        self.packetLossTotal = 0
-        self.delayArray = []
-        self.delayTimer = None
-
-
         self.incomingData = True
         self.timeouts = 0
 
@@ -136,9 +109,6 @@ class receiveAudio(threading.Thread):
             mreq = struct.pack('4sL', group, socket.INADDR_ANY)
             self.sockUDP.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, mreq)
             self.sockUDP.settimeout(1)
-            
-            self.timerTotal = time.time()
-            self.timer = time.time()
 
             while True:
                 # Stop the thread when variable is set through main program
@@ -149,43 +119,17 @@ class receiveAudio(threading.Thread):
                 if self.incomingData is False:
                     break
 
-                # Set statistics
-                if(time.time() - self.timer > 5.0):
-                    self.packetsReceivedTotal = self.packetsReceivedTotal + self.packetsReceived
-                    self.packetRate = round(self.packetsReceived*SOCKET_BROADCAST_SIZE*8/((time.time() - self.timer)*1000000.0), 2)
-                    self.packetRateTotal = round(self.packetsReceivedTotal*SOCKET_BROADCAST_SIZE*8/((time.time() - self.timerTotal)*1000000.0), 2)
-                    self.timer = time.time()
-                    self.packetLoss = self.lostPackets / (self.lostPackets + self.packetsReceived)
-                    self.lostPacketsTotal = self.lostPacketsTotal + self.lostPackets
-                    self.packetLossTotal = self.lostPacketsTotal / (self.lostPacketsTotal + self.packetsReceivedTotal)
-                    self.lostPackets = 0
-                    self.packetsReceived = 0
                 try:
                     new_data, address = self.sockUDP.recvfrom(SOCKET_BROADCAST_SIZE)
                     SERVER_IP = address[0]
-                    if self.delayTimer is not None:
-                        self.delayArray.append(time.time() - self.delayTimer)
-                    if len(self.delayArray) > 100:
-                        del self.delayArray[0]
-                    self.delayTimer = time.time()
-                    rtpPacket = RtpPacket()
-                    rtpPacket.decode(new_data)
-                    data.append(rtpPacket)
-                    # Set Statistics
-                    if self.seqNum == None:
-                        self.seqNum = rtpPacket.seqNum() - 1
-                    if rtpPacket.seqNum() != self.seqNum + 1:
-                        self.lostPackets = self.lostPackets + 1
-                    self.seqNum = rtpPacket.seqNum()
-                    self.packetsReceived = self.packetsReceived + 1
+                    data.append(new_data)
                 except socket.timeout:
                     logger.debug("[RECEIVE]\t\tTimeout")
                     self.timeouts = self.timeouts + 1
-                    
+
                     # Raise incomind data flag when more than 5 timeouts occur
                     if self.timeouts > 5:
                         self.incomingData = False
-
 
             # Stopping the thread
             logger.debug("[RECEIVE]\t\tStop Thread")
@@ -202,17 +146,17 @@ class synchronisationHandler(threading.Thread):
         threading.Thread.__init__(self)
         logger.debug("[SYNC]\t\tStart Thread")
         self.sock = None
-        self.delayArray = []
         self.stop_thread = False
         self.init = False
 
     def run(self):
         global timeStart, SERVER_IP
         now = time.time() - 60
+        self.delayArray = []
         while(True):
             time.sleep(1)
             if self.stop_thread is True:
-                logger.deebug("[SYNC]\t\tStop Thread")
+                logger.debug("[SYNC]\t\tStop Thread")
                 break
             if (time.time() - now > 60 ):
                 now = time.time()
@@ -239,30 +183,27 @@ class synchronisationHandler(threading.Thread):
                 else:
                     timeStart = timeStart - ( 0.1 * mean )
                     print(f"time delay: {mean}, adjusted timer: {round((-0.1 * mean)*1000000.0, 4)} us")
-                variance = sum((i - mean) ** 2 for i in self.delayArray) / len(self.delayArray)
                 self.delayArray.clear()
 
 if __name__ == "__main__":
-    delay = []
-    avg = 0
-
     # Start Receiving Audio
     thread_receive = receiveAudio()
     thread_receive.start()
 
     # Wait for receiving Server ip address
     while SERVER_IP == "":
-        time.sleep(0.1)
+        time.sleep(0.5)
+
     # Start Synchronizing
     thread_synchronize = synchronisationHandler()
     thread_synchronize.start()
 
     # Wait for synchronizing is initialized    
     while thread_synchronize.init is False:
-        time.sleep(0.1)
+        time.sleep(0.5)
 
     # Start Playing Audio
-    thread_play = playAudio(delayBuffer=100)
+    thread_play = playAudio()
     thread_play.start()
 
 
@@ -270,17 +211,7 @@ if __name__ == "__main__":
     try:
         while True:
             time.sleep(2)
-            if thread_play.init is True:        
-                meanPlay = sum(thread_play.delayArray) / len(thread_play.delayArray)
-                resPlay = sum((i - meanPlay) ** 2 for i in thread_play.delayArray) / len(thread_play.delayArray) 
-                meanReceive = sum(thread_receive.delayArray) / len(thread_receive.delayArray)
-                resReceive = sum((i - meanReceive) ** 2 for i in thread_receive.delayArray) / len(thread_receive.delayArray) 
-                #logger.info(f"Packets received: {thread_receive.packetsReceived} | Packet rate: {thread_receive.packetRate} Mb/s | Packet loss: {thread_receive.packetLoss} % | Total packets received: {thread_receive.packetsReceivedTotal} | Total packet rate: {thread_receive.packetRateTotal} Mb/s | Packet loss total: {thread_receive.packetLossTotal} %")
-                #logger.info(f"avg delay: {round(meanReceive*1000.0, 2)} us | var: {round(resReceive*1000.0, 2)} ms | min: {round(min(thread_receive.delayArray)*1000.0, 2)} us | max: {round(max(thread_receive.delayArray)*1000.0, 2)} us")
-                logger.info(f"current delay: {round(thread_play.delayArray[-1]*1000000.0, 2)} us | avg: {round(meanPlay*1000000.0, 2)} us | var: {round(resPlay*1000000000000.0, 2)} ps | min: {round(min(thread_play.delayArray)*1000000.0, 2)} us | max: {round(max(thread_play.delayArray)*1000000.0, 2)} us")
-        
     except KeyboardInterrupt:
-        #thread_login.stop_thread = True
         thread_play.stop_thread = True
         thread_receive.stop_thread = True
         thread_synchronize.stop_thread = True
