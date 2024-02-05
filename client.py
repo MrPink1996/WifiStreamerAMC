@@ -1,13 +1,14 @@
 import pyaudio
 import socket
-from RtpPacket import RtpPacket
 import time
 import threading
 import random
 import logging
-import struct
+import os
+import scapy.contrib.igmp
+from scapy.all import *
 
-# Configurations for console and file logger
+
 # Configurations for console and file logger
 logger = logging.getLogger("RTP Audio Client")
 logfile_handle = logging.FileHandler(filename="log_receiver.txt")
@@ -28,6 +29,10 @@ logger.addHandler(console_handle)
 ## RTCP even port
 data = []
 timeStart = 0
+rtt = 0
+
+OUTPUT_BUFFER_SIZE = 16
+HEADER_SIZE = 10
 
 # AUDIO VARIABLES
 AUDIO_CHUNK_SIZE = 1024 # SAMPLES
@@ -35,17 +40,13 @@ AUDIO_CHANNELS = 2
 AUDIO_FORMAT = pyaudio.paInt16 # 2 bytes size
 AUDIO_BYTE_SIZE = 2
 AUDIO_RATE = 44100
-AUDIO_DELAY = (AUDIO_CHUNK_SIZE/AUDIO_RATE) * 128
-
+AUDIO_DELAY = (AUDIO_CHUNK_SIZE/AUDIO_RATE) * OUTPUT_BUFFER_SIZE
 
 # SOCKET VARIABLES
 SERVER_IP = ""
-PORT_SYNC = 5003
-PORT_CTRL = 5004
 PORT_TRANSMIT = 5005
-PORT_SDP = 5006
 SOCKET_CHUNK_SIZE = 1024 # SAMPLES
-SOCKET_BROADCAST_SIZE = SOCKET_CHUNK_SIZE*AUDIO_CHANNELS*AUDIO_BYTE_SIZE + 6# BYTES
+SOCKET_BROADCAST_SIZE = SOCKET_CHUNK_SIZE*AUDIO_CHANNELS*AUDIO_BYTE_SIZE + HEADER_SIZE# BYTES
            
 class playAudio(threading.Thread):
     def __init__(self):
@@ -54,12 +55,14 @@ class playAudio(threading.Thread):
         self.stop_thread = False
         self.stream = None
         self.pa = pyaudio.PyAudio()
-        self.init = False
+
+    def byteToFloat32(self, byte):
+        return float((byte[0] << 24) + (byte[1] << 16) + (byte[2] << 8) + (byte[3]))
 
     def run(self):
         global timeStart, data
         try:
-            self.stream = self.pa.open(format=AUDIO_FORMAT, channels=AUDIO_CHANNELS, rate=AUDIO_RATE, output=True, frames_per_buffer=AUDIO_CHUNK_SIZE)
+            self.stream = self.pa.open(format=AUDIO_FORMAT, channels=AUDIO_CHANNELS, rate=AUDIO_RATE, output=True, frames_per_buffer=AUDIO_CHUNK_SIZE) # , output_device_index=3
             logger.debug("[PLAY]\t\tStart audio stream")
 
             while True:
@@ -69,15 +72,22 @@ class playAudio(threading.Thread):
                 if len(data) == 0:
                     continue
                 
-                timestamp = (data[0][2] << 24) + (data[0][3] << 16) + (data[0][4] << 8) + (data[0][5])
+                # Get data from buffer and delete packet
+                data_out = data[0]
                 del data[0]
-                time_playout = (float(timestamp)/1000000.0) + AUDIO_DELAY
-                print(time_playout)
+
+                # Calculate time for playout
+                time_playout = ((self.byteToFloat32(data_out[4:8])) / 1000000.0) + AUDIO_DELAY
+
+                # Calculate delay
                 delay = (time.time() - timeStart) - time_playout
+                
+                # Wait for playout
                 while(delay < 0.0):
-                    delay = (time.time() - timeStart) - time_playout                
-                self.stream.write(data[0].getPayload())
-                del data[0]
+                    delay = (time.time() - timeStart) - time_playout
+
+                # Playout packet
+                self.stream.write(data_out[HEADER_SIZE:])
             logger.debug("[PLAY]\t\tStop Thread")
             logger.debug("[PLAY]\t\tStop audio stream")
             self.stream.close()
@@ -95,41 +105,62 @@ class receiveAudio(threading.Thread):
         logger.debug("[RECEIVE]\t\tStart Thread")
         self.stop_thread = False
         self.sockUDP = None
-        self.seqNum = None
-        self.incomingData = True
-        self.timeouts = 0
+        self.packetCount = 0
+
+    def byteToFloat32(self, byte):
+        return float((byte[0] << 24) + (byte[1] << 16) + (byte[2] << 8) + (byte[3]))
 
     def run(self):
-        global data, SERVER_IP
+        global data, SERVER_IP, rtt, timeStart
         try:
             logger.debug("[RECEIVE][UDP]\tOpen socket")
             self.sockUDP = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
-            self.sockUDP.bind(('', int(PORT_TRANSMIT)))
-            group = socket.inet_aton('224.3.29.71')
-            mreq = struct.pack('4sL', group, socket.INADDR_ANY)
+            self.sockUDP.bind(('224.3.29.71', int(PORT_TRANSMIT)))
+            #group = socket.inet_aton('224.3.29.71')
+            #mreq = struct.pack('4sL', group, socket.INADDR_ANY)
+            mreq = b'\xe0\x03\x1dG\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00'
             self.sockUDP.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, mreq)
-            self.sockUDP.settimeout(1)
+            self.sockUDP.settimeout(3)
 
             while True:
-                # Stop the thread when variable is set through main program
                 if self.stop_thread is True:
                     break
 
-                # Stop the thread when there is no incoming Data
-                if self.incomingData is False:
-                    break
-
                 try:
+                    # Get new data from server
                     new_data, address = self.sockUDP.recvfrom(SOCKET_BROADCAST_SIZE)
+                    self.packetCount = self.packetCount + 1
+                    if len(new_data) != SOCKET_BROADCAST_SIZE:
+                        continue
+                    # Set Server ip
                     SERVER_IP = address[0]
-                    data.append(new_data)
-                except socket.timeout:
-                    logger.debug("[RECEIVE]\t\tTimeout")
-                    self.timeouts = self.timeouts + 1
+                    
+                    # Calculate sending time of packet
+                    time_current = ((self.byteToFloat32(new_data[:4])) / 1000000.0) + rtt/2.0
 
-                    # Raise incomind data flag when more than 5 timeouts occur
-                    if self.timeouts > 5:
-                        self.incomingData = False
+                    # Calculate client time with round trip time
+                    if timeStart == 0:
+                        timeStart = time.time() - time_current
+                    else:
+                        d = (time.time() - timeStart) - time_current
+                        timeStart = timeStart + (0.01 * d)
+
+                    # Append data to processing buffer
+                    data.append(new_data)
+                    if len(data) > 2 * OUTPUT_BUFFER_SIZE:
+                        del data[0]
+
+                    # if self.packetCount > 400:
+                    #     self.packetCount = 0
+                    #     igmpPacket = IP(dst='224.3.29.71')/scapy.contrib.igmp.IGMP(type=0x16, gaddr="224.3.29.71", mrcode=20)
+                    #     send(igmpPacket, verbose=False)
+
+                except socket.timeout:
+                    print("packet length", self.packetCount)
+                    igmpPacket = IP(dst='224.3.29.71')/scapy.contrib.igmp.IGMP(type=0x16, gaddr="224.3.29.71", mrcode=20)
+                    send(igmpPacket, verbose=False)
+                    logger.debug("[RECEIVE]\t\tTimeout")
+                    logger.debug(f"[RECEIVE]\t\tRestarted Socket")
 
             # Stopping the thread
             logger.debug("[RECEIVE]\t\tStop Thread")
@@ -147,60 +178,45 @@ class synchronisationHandler(threading.Thread):
         logger.debug("[SYNC]\t\tStart Thread")
         self.sock = None
         self.stop_thread = False
-        self.init = False
+
+    def ping(self, ip, n):
+        response = os.popen(f"ping -c {n} {ip} ")
+        data = response.read()
+        data = data.split("\n")[-2]
+        data = data.split("=")[-1][1:-3]
+        data = data.split("/")
+        rtt_avg = float(data[1]) / 1000.0
+        return rtt_avg
 
     def run(self):
-        global timeStart, SERVER_IP
-        now = time.time() - 60
-        self.delayArray = []
-        while(True):
+        global rtt, SERVER_IP
+
+        # Wait till server ip is recognized
+        while SERVER_IP == "":
             time.sleep(1)
+
+        now = time.time() - 60
+        while(True):
             if self.stop_thread is True:
                 logger.debug("[SYNC]\t\tStop Thread")
                 break
-            if (time.time() - now > 60 ):
+
+            # Every 60 seconds update round trip time
+            if (time.time() - now > 60):
                 now = time.time()
-                for i in range(20):
-                    try:
-                        self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                        self.sock.connect((SERVER_IP, int(PORT_SYNC)))
-                        timeSend = time.time()
-                        self.sock.sendall(bytes(str("0"), "utf-8"))
-                        data = self.sock.recv(1024)
-                        timeReceive = time.time()
-                        tt = (timeReceive - timeSend) / 2.0
-                        timeServer = float(data.decode("utf-8")) + tt
-                        timeClient = time.time() - timeStart
-                        delay = timeServer - timeClient
-                        self.delayArray.append(delay)
-                    finally:
-                        self.sock.close()
-                mean = sum(self.delayArray) / len(self.delayArray)
-                if( abs(mean) > 0.01):
-                    timeStart = time.time() - (float(data.decode("utf-8")) + tt)
-                    print(f"time delay: {mean}, set timer!")
-                    self.init = True
-                else:
-                    timeStart = timeStart - ( 0.1 * mean )
-                    print(f"time delay: {mean}, adjusted timer: {round((-0.1 * mean)*1000000.0, 4)} us")
-                self.delayArray.clear()
+                rtt = self.ping(SERVER_IP, 10)
+            
+            time.sleep(1)
+
 
 if __name__ == "__main__":
     # Start Receiving Audio
     thread_receive = receiveAudio()
     thread_receive.start()
 
-    # Wait for receiving Server ip address
-    while SERVER_IP == "":
-        time.sleep(0.5)
-
     # Start Synchronizing
     thread_synchronize = synchronisationHandler()
     thread_synchronize.start()
-
-    # Wait for synchronizing is initialized    
-    while thread_synchronize.init is False:
-        time.sleep(0.5)
 
     # Start Playing Audio
     thread_play = playAudio()
@@ -211,9 +227,8 @@ if __name__ == "__main__":
     try:
         while True:
             time.sleep(2)
+
     except KeyboardInterrupt:
         thread_play.stop_thread = True
         thread_receive.stop_thread = True
         thread_synchronize.stop_thread = True
-
-        
